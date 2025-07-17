@@ -5,18 +5,6 @@ terraform {
       version = "~> 5.0"
     }
   }
-
-  backend "s3" {
-    bucket         = "your-terraform-state-bucket"
-    key            = "url-shortener/terraform.tfstate"
-    region         = "eu-central-1"
-    encrypt        = true
-    dynamodb_table = "terraform-lock-table"
-  }
-}
-
-provider "aws" {
-  region = "eu-central-1"
 }
 
 # ECR repository to store the Lambda docker image

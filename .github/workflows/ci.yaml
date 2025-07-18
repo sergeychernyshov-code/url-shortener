@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   pr-deploy:
     runs-on: ubuntu-latest
@@ -21,7 +25,7 @@ jobs:
         run: |
           cd backend
           if [ ! -f go.mod ]; then
-            go mod init github.com/yourusername/url-shortener/backend
+            go mod init github.com/sergeychernyshov-code/url-shortener/backend
           fi
           go mod tidy
 

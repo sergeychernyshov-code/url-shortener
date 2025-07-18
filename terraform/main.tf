@@ -1,33 +1,27 @@
-data "aws_caller_identity" "current" {}
-
 locals {
   env_suffix       = var.environment == "prod" ? "" : "-${var.environment}"
   lambda_name      = "${var.lambda_function_name}${local.env_suffix}"
   sns_topic_name   = "url-shortener-alerts${local.env_suffix}"
   api_name         = "url-shortener-api${local.env_suffix}"
   lambda_role_name = "url-shortener-lambda-exec-role${local.env_suffix}"
+
+  dynamodb_table_name = "url-shortener-table${local.env_suffix}"
+  ecr_repo_name       = "url-shortener-lambda${local.env_suffix}"
 }
 
-# DynamoDB table
-resource "aws_dynamodb_table" "url_shortener_table" {
-  name           = var.dynamo_table_name
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "code"
+resource "aws_dynamodb_table" "url_shortener" {
+  name         = local.dynamodb_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "code"
 
   attribute {
     name = "code"
     type = "S"
   }
-
-  tags = {
-    Environment = var.environment
-    Project     = var.lambda_function_name
-  }
 }
 
-# ECR repository for Lambda container images
 resource "aws_ecr_repository" "url_shortener" {
-  name = "url-shortener-lambda${local.env_suffix}"
+  name = local.ecr_repo_name
 }
 
 resource "aws_ecr_repository_policy" "lambda_repo_policy" {
@@ -75,31 +69,22 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-resource "aws_iam_policy" "dynamo_access" {
-  name = "url-shortener-lambda-dynamo-access${local.env_suffix}"
+resource "aws_iam_role_policy" "dynamo_access" {
+  name = "url-shortener-dynamo-access${local.env_suffix}"
+  role = aws_iam_role.lambda_exec.id
 
   policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect = "Allow",
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan"
-        ],
-        Resource = aws_dynamodb_table.url_shortener_table.arn
-      }
-    ]
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem"
+      ]
+      Resource = aws_dynamodb_table.url_shortener.arn
+    }]
   })
-}
-
-resource "aws_iam_role_policy_attachment" "dynamo_access_attach" {
-  role       = aws_iam_role.lambda_exec.name
-  policy_arn = aws_iam_policy.dynamo_access.arn
 }
 
 resource "aws_lambda_function" "url_shortener" {
@@ -112,8 +97,8 @@ resource "aws_lambda_function" "url_shortener" {
 
   environment {
     variables = {
-      DYNAMO_TABLE = aws_dynamodb_table.url_shortener_table.name
-      API_AUTH_TOKEN  = var.api_auth_token
+      DYNAMO_TABLE   = local.dynamodb_table_name
+      API_AUTH_TOKEN = var.api_auth_token
     }
   }
 }

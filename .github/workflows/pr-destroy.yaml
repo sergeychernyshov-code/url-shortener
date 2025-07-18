@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [closed]
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   pr-destroy:
     runs-on: ubuntu-latest

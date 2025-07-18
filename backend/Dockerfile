@@ -1,25 +1,25 @@
-# Builder: use official Golang 1.24.4 image
-FROM golang:1.24.4 AS builder
+# Stage 1: Builder
+FROM golang:1.20 as builder
 
 WORKDIR /app
 
-# Copy Go module files and download dependencies
+# Copy Go module files
 COPY go.mod go.sum ./
+
+# Download dependencies
 RUN go mod download
 
 # Copy the source code
-COPY main.go ./
+COPY . .
 
-# Build statically linked binary named 'bootstrap'
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bootstrap main.go
+# Build a static Linux binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main main.go
 
-# Runtime: AWS Lambda provided.al2023 base image (Amazon Linux 2023)
+# Stage 2: Runtime (AWS Lambda AL2023 provided runtime)
 FROM public.ecr.aws/lambda/provided:al2023
 
-# Copy the bootstrap binary to /var/task/bootstrap
-COPY --from=builder /app/bootstrap /var/task/bootstrap
+# Copy the built binary into Lambda task root
+COPY --from=builder /app/main ${LAMBDA_TASK_ROOT}/main
 
-# Make sure bootstrap is executable
-RUN chmod +x /var/task/bootstrap
-
-# No CMD needed for provided runtime (Lambda will run /var/task/bootstrap by default)
+# Set the Lambda handler
+CMD ["main"]

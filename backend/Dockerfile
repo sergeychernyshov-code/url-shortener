@@ -1,9 +1,13 @@
-# Use AWS Lambda Go base image
 FROM public.ecr.aws/lambda/go:1
 
-# Copy executable to Lambda working directory
-COPY main ${LAMBDA_TASK_ROOT}/main
+# Copy source code
+COPY main.go .
 
-# Set the CMD to the executable
-CMD ["main"]
+# Install Go compiler
+RUN yum install -y golang
 
+# Build the Go binary
+RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o main main.go
+
+# Lambda entrypoint
+CMD [ "main" ]

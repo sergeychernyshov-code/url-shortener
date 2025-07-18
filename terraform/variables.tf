@@ -16,12 +16,6 @@ variable "lambda_function_name" {
   default     = "url-shortener"
 }
 
-variable "dynamo_table_name" {
-  description = "DynamoDB table name"
-  type        = string
-  default     = "url-shortener-table-dev"
-}
-
 variable "api_auth_token" {
   description = "Secret token to authorize API requests"
   type        = string

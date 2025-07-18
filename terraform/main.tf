@@ -1,17 +1,39 @@
-
-# Append environment suffix except if prod (to keep names clean)
+# Locals for environment suffixes and names
 locals {
-  env_suffix = var.environment == "prod" ? "" : "-${var.environment}"
-  lambda_name = "${var.lambda_function_name}${local.env_suffix}"
-  sns_topic_name = "url-shortener-alerts${local.env_suffix}"
-  api_name = "url-shortener-api${local.env_suffix}"
+  env_suffix       = var.environment == "prod" ? "" : "-${var.environment}"
+  lambda_name      = "${var.lambda_function_name}${local.env_suffix}"
+  sns_topic_name   = "url-shortener-alerts${local.env_suffix}"
+  api_name         = "url-shortener-api${local.env_suffix}"
   lambda_role_name = "url-shortener-lambda-exec-role${local.env_suffix}"
 }
 
+# ECR repository for Lambda container images
 resource "aws_ecr_repository" "url_shortener" {
   name = "url-shortener-lambda${local.env_suffix}"
 }
 
+# ECR repository policy to allow Lambda to pull images
+resource "aws_ecr_repository_policy" "lambda_repo_policy" {
+  repository = aws_ecr_repository.url_shortener.name
+
+  policy = jsonencode({
+    Version = "2008-10-17"
+    Statement = [{
+      Sid       = "AllowLambdaPull"
+      Effect    = "Allow"
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      }
+      Action = [
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "ecr:BatchCheckLayerAvailability"
+      ]
+    }]
+  })
+}
+
+# IAM role for Lambda execution
 resource "aws_iam_role" "lambda_exec" {
   name = local.lambda_role_name
 
@@ -27,6 +49,7 @@ resource "aws_iam_role" "lambda_exec" {
   })
 }
 
+# Attach policies to Lambda execution role
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -37,6 +60,7 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+# Lambda function (container image)
 resource "aws_lambda_function" "url_shortener" {
   function_name = local.lambda_name
 
@@ -48,11 +72,13 @@ resource "aws_lambda_function" "url_shortener" {
   memory_size = 256
 }
 
+# HTTP API Gateway v2
 resource "aws_apigatewayv2_api" "http_api" {
   name          = local.api_name
   protocol_type = "HTTP"
 }
 
+# Lambda integration for API Gateway
 resource "aws_apigatewayv2_integration" "lambda_integration" {
   api_id                 = aws_apigatewayv2_api.http_api.id
   integration_type       = "AWS_PROXY"
@@ -60,18 +86,21 @@ resource "aws_apigatewayv2_integration" "lambda_integration" {
   payload_format_version = "2.0"
 }
 
+# Route for all requests to Lambda
 resource "aws_apigatewayv2_route" "default_route" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "ANY /{proxy+}"
   target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
 
+# Default stage, auto-deploy enabled
 resource "aws_apigatewayv2_stage" "default_stage" {
   api_id      = aws_apigatewayv2_api.http_api.id
   name        = "$default"
   auto_deploy = true
 }
 
+# Permission for API Gateway to invoke Lambda
 resource "aws_lambda_permission" "apigw_invoke" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
@@ -80,16 +109,19 @@ resource "aws_lambda_permission" "apigw_invoke" {
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
 
+# SNS topic for alerts
 resource "aws_sns_topic" "alerts" {
   name = local.sns_topic_name
 }
 
+# Email subscription to SNS topic
 resource "aws_sns_topic_subscription" "email_sub" {
   topic_arn = aws_sns_topic.alerts.arn
   protocol  = "email"
   endpoint  = var.sns_email
 }
 
+# CloudWatch alarm for Lambda errors
 resource "aws_cloudwatch_metric_alarm" "lambda_error_alarm" {
   alarm_name          = "url-shortener-lambda-errors${local.env_suffix}"
   alarm_description   = "Alarm when the Lambda function experiences errors"
@@ -106,6 +138,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_error_alarm" {
   }
 }
 
+# CloudWatch alarm for Lambda throttles
 resource "aws_cloudwatch_metric_alarm" "lambda_throttle_alarm" {
   alarm_name          = "url-shortener-lambda-throttles${local.env_suffix}"
   alarm_description   = "Alarm when the Lambda function is throttled"

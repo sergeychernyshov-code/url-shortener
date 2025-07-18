@@ -46,13 +46,14 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build Docker image
         run: |
           docker build -t url-shortener-lambda backend/
 
-      - name: Tag Docker image with commit SHA
+      - name: Tag Docker image with commit SHA and Push
         run: |
           IMAGE_TAG=${{ github.sha }}
           IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/url-shortener-lambda:${IMAGE_TAG}"

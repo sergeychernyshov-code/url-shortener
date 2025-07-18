@@ -15,7 +15,6 @@ jobs:
 
     env:
       AWS_REGION: eu-central-1
-      TF_WORKSPACE: url-shortener
 
     steps:
       - name: Checkout code
@@ -74,9 +73,10 @@ jobs:
       - name: Terraform Select or Create Workspace
         run: |
           cd terraform
-          terraform workspace list | grep -q "$TF_WORKSPACE" \
-            && terraform workspace select "$TF_WORKSPACE" \
-            || terraform workspace new "$TF_WORKSPACE"
+          WORKSPACE="url-shortener"
+          terraform workspace list | grep -q "$WORKSPACE" \
+            && terraform workspace select "$WORKSPACE" \
+            || terraform workspace new "$WORKSPACE"
 
       - name: Terraform Apply (Prod)
         run: |

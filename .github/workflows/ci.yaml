@@ -15,7 +15,6 @@ jobs:
 
     env:
       AWS_REGION: eu-central-1
-      WORKSPACE: url-shortener-dev
 
     steps:
       - name: Checkout code
@@ -36,8 +35,7 @@ jobs:
 
       - name: Build Go executable
         working-directory: backend
-        run: |
-          GOOS=linux GOARCH=amd64 go build -o main
+        run: GOOS=linux GOARCH=amd64 go build -o main
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -49,17 +47,16 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build and Push Docker image to ECR
+      - name: Build Docker image
+        run: docker build -t url-shortener-lambda -f backend/Dockerfile backend/
+
+      - name: Tag and Push Docker image
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           IMAGE_TAG=pr-${PR_NUMBER}
-          IMAGE_NAME=url-shortener-lambda
-          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${IMAGE_NAME}:${IMAGE_TAG}"
-
-          docker build -t $IMAGE_NAME -f backend/Dockerfile backend/
-          docker tag $IMAGE_NAME $IMAGE_URI
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/url-shortener-lambda:${IMAGE_TAG}"
+          docker tag url-shortener-lambda $IMAGE_URI
           docker push $IMAGE_URI
-
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
       - name: Setup Terraform
@@ -68,19 +65,19 @@ jobs:
           terraform_version: 1.6.0
 
       - name: Terraform Init
-        working-directory: terraform
-        run: terraform init
-
-      - name: Terraform Workspace Select or Create
-        working-directory: terraform
         run: |
-          terraform workspace list | grep -q "${{ env.WORKSPACE }}" \
-            && terraform workspace select "${{ env.WORKSPACE }}" \
-            || terraform workspace new "${{ env.WORKSPACE }}"
+          cd terraform
+          terraform init
+
+      - name: Terraform Select or Create Workspace
+        run: |
+          cd terraform
+          WORKSPACE="url-shortener-dev"
+          terraform workspace list | grep -q "$WORKSPACE" \
+            && terraform workspace select "$WORKSPACE" \
+            || terraform workspace new "$WORKSPACE"
 
       - name: Terraform Apply (Dev)
-        working-directory: terraform
         run: |
-          terraform apply -auto-approve \
-            -var "image_uri=${{ env.IMAGE_URI }}" \
-            -var "environment=dev"
+          cd terraform
+          terraform apply -auto-approve -var "image_uri=${{ env.IMAGE_URI }}" -var "environment=dev"

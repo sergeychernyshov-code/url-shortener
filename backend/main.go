@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -31,6 +33,10 @@ type ShortenRequest struct {
 	URL string `json:"url"`
 }
 
+type ShortenResponse struct {
+	ShortURL string `json:"short_url"`
+}
+
 func randomCode(n int) string {
 	b := make([]rune, n)
 	for i := range b {
@@ -39,19 +45,28 @@ func randomCode(n int) string {
 	return string(b)
 }
 
-func handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	switch req.HTTPMethod {
+func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	path := req.RawPath
+	method := req.RequestContext.HTTP.Method
+
+	switch method {
 	case "POST":
 		// Handle /shorten
+		if !strings.HasSuffix(path, "/shorten") {
+			return events.APIGatewayV2HTTPResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       "Not found",
+			}, nil
+		}
+
 		var body ShortenRequest
-		err := json.Unmarshal([]byte(req.Body), &body)
-		if err != nil || body.URL == "" {
-			return events.APIGatewayProxyResponse{StatusCode: 400, Body: "Invalid request"}, nil
+		if err := json.Unmarshal([]byte(req.Body), &body); err != nil || body.URL == "" {
+			return events.APIGatewayV2HTTPResponse{StatusCode: 400, Body: "Invalid request"}, nil
 		}
 
 		code := randomCode(6)
 
-		_, err = dynamo.PutItem(&dynamodb.PutItemInput{
+		_, err := dynamo.PutItem(&dynamodb.PutItemInput{
 			TableName: aws.String(tableName),
 			Item: map[string]*dynamodb.AttributeValue{
 				"code":     {S: aws.String(code)},
@@ -59,15 +74,28 @@ func handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.API
 			},
 		})
 		if err != nil {
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: "Database error"}, nil
+			return events.APIGatewayV2HTTPResponse{StatusCode: 500, Body: "Database error"}, nil
 		}
 
-		response := fmt.Sprintf(`{"short_url":"https://%s/prod/%s"}`, req.Headers["Host"], code)
-		return events.APIGatewayProxyResponse{StatusCode: 200, Body: response}, nil
+		shortURL := fmt.Sprintf("https://%s/%s", req.Headers["host"], code)
+		response := ShortenResponse{ShortURL: shortURL}
+		respBody, _ := json.Marshal(response)
+
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusOK,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			Body: string(respBody),
+		}, nil
 
 	case "GET":
 		// Handle /{code}
-		code := req.PathParameters["code"]
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) != 1 {
+			return events.APIGatewayV2HTTPResponse{StatusCode: 400, Body: "Invalid URL"}, nil
+		}
+		code := parts[0]
 
 		res, err := dynamo.GetItem(&dynamodb.GetItemInput{
 			TableName: aws.String(tableName),
@@ -76,20 +104,20 @@ func handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.API
 			},
 		})
 		if err != nil || res.Item == nil {
-			return events.APIGatewayProxyResponse{StatusCode: 404, Body: "Not found"}, nil
+			return events.APIGatewayV2HTTPResponse{StatusCode: 404, Body: "Not found"}, nil
 		}
 
 		longURL := *res.Item["long_url"].S
 
-		return events.APIGatewayProxyResponse{
-			StatusCode: 301,
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusMovedPermanently,
 			Headers: map[string]string{
 				"Location": longURL,
 			},
 		}, nil
 
 	default:
-		return events.APIGatewayProxyResponse{StatusCode: 405, Body: "Method not allowed"}, nil
+		return events.APIGatewayV2HTTPResponse{StatusCode: 405, Body: "Method not allowed"}, nil
 	}
 }
 

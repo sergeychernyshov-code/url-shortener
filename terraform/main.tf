@@ -70,6 +70,7 @@ resource "aws_lambda_function" "url_shortener" {
   role        = aws_iam_role.lambda_exec.arn
   timeout     = 10
   memory_size = 256
+  handler     = "bootstrap"
 }
 
 # HTTP API Gateway v2

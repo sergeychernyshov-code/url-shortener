@@ -19,4 +19,5 @@ FROM public.ecr.aws/lambda/provided:al2023
 # Copy the compiled binary to Lambda's expected bootstrap location
 COPY --from=builder /app/bootstrap /var/task/bootstrap
 
-# No need to specify CMD or ENTRYPOINT because AWS Lambda will execute /var/task/bootstrap automatically
+# Set handler name for Lambda container image expectations
+CMD ["bootstrap"]

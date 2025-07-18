@@ -45,24 +45,30 @@ func randomCode(n int) string {
 	return string(b)
 }
 
-func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+func unauthorizedResponse() events.APIGatewayV2HTTPResponse {
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusUnauthorized,
+		Body:       "Unauthorized",
+		Headers: map[string]string{
+			"WWW-Authenticate": `Bearer realm="URL Shortener"`,
+		},
+	}
+}
 
-	authHeader := req.Headers["Authorization"]
+func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	authHeader := req.Headers["authorization"]
 	expectedToken := os.Getenv("API_AUTH_TOKEN")
 
-	if authHeader != "Bearer "+expectedToken {
-		return events.APIGatewayProxyResponse{
-			StatusCode: 401,
-			Body:       "Unauthorized",
-		}, nil
+	if !strings.HasPrefix(authHeader, "Bearer ") || authHeader != "Bearer "+expectedToken {
+		return unauthorizedResponse(), nil
 	}
 
 	path := req.RawPath
 	method := req.RequestContext.HTTP.Method
 
 	switch method {
-	case "POST":
-		// Handle /shorten
+	case http.MethodPost:
+		// Only accept POST on /shorten
 		if !strings.HasSuffix(path, "/shorten") {
 			return events.APIGatewayV2HTTPResponse{
 				StatusCode: http.StatusNotFound,
@@ -72,7 +78,7 @@ func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.AP
 
 		var body ShortenRequest
 		if err := json.Unmarshal([]byte(req.Body), &body); err != nil || body.URL == "" {
-			return events.APIGatewayV2HTTPResponse{StatusCode: 400, Body: "Invalid request"}, nil
+			return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusBadRequest, Body: "Invalid request"}, nil
 		}
 
 		code := randomCode(6)
@@ -85,7 +91,7 @@ func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.AP
 			},
 		})
 		if err != nil {
-			return events.APIGatewayV2HTTPResponse{StatusCode: 500, Body: "Database error"}, nil
+			return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusInternalServerError, Body: "Database error"}, nil
 		}
 
 		shortURL := fmt.Sprintf("https://%s/%s", req.Headers["host"], code)
@@ -94,17 +100,15 @@ func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.AP
 
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusOK,
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			Body: string(respBody),
+			Headers:    map[string]string{"Content-Type": "application/json"},
+			Body:       string(respBody),
 		}, nil
 
-	case "GET":
-		// Handle /{code}
+	case http.MethodGet:
+		// Expecting GET /{code}
 		parts := strings.Split(strings.Trim(path, "/"), "/")
 		if len(parts) != 1 {
-			return events.APIGatewayV2HTTPResponse{StatusCode: 400, Body: "Invalid URL"}, nil
+			return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusBadRequest, Body: "Invalid URL"}, nil
 		}
 		code := parts[0]
 
@@ -115,20 +119,18 @@ func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.AP
 			},
 		})
 		if err != nil || res.Item == nil {
-			return events.APIGatewayV2HTTPResponse{StatusCode: 404, Body: "Not found"}, nil
+			return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNotFound, Body: "Not found"}, nil
 		}
 
 		longURL := *res.Item["long_url"].S
 
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusMovedPermanently,
-			Headers: map[string]string{
-				"Location": longURL,
-			},
+			Headers:    map[string]string{"Location": longURL},
 		}, nil
 
 	default:
-		return events.APIGatewayV2HTTPResponse{StatusCode: 405, Body: "Method not allowed"}, nil
+		return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusMethodNotAllowed, Body: "Method not allowed"}, nil
 	}
 }
 

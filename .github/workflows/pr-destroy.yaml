@@ -1,0 +1,39 @@
+name: PR Destroy - URL Shortener Dev
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  pr-destroy:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: eu-central-1
+      TF_WORKSPACE: url-shortener-dev
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    - name: Terraform Select Workspace
+      run: |
+        cd terraform
+        terraform workspace select $TF_WORKSPACE || terraform workspace new $TF_WORKSPACE
+
+    - name: Terraform Destroy (Dev)
+      run: |
+        cd terraform
+        terraform destroy -auto-approve -var "image_uri=dummy"
+

@@ -1,4 +1,4 @@
-name: Deploy URL Shortener
+name: Prod Deploy - URL Shortener
 
 on:
   push:
@@ -6,26 +6,16 @@ on:
       - main
 
 jobs:
-  deploy:
+  prod-deploy:
     runs-on: ubuntu-latest
 
     env:
       AWS_REGION: eu-central-1
-      TF_WORKSPACE: url-shortener-prod  # <-- your isolated workspace name here
+      TF_WORKSPACE: url-shortener
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -37,19 +27,26 @@ jobs:
           cd backend
           GOOS=linux GOARCH=amd64 go build -o main
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
       - name: Build Docker image
         run: |
           docker build -t url-shortener-lambda backend/
 
-      - name: Tag Docker image
+      - name: Tag Docker image with commit SHA
         run: |
-          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/url-shortener-lambda:latest"
-          docker tag url-shortener-lambda:latest $IMAGE_URI
-
-      - name: Push Docker image
-        run: |
-          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/url-shortener-lambda:latest"
+          IMAGE_TAG=${{ github.sha }}
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/url-shortener-lambda:${IMAGE_TAG}"
+          docker tag url-shortener-lambda $IMAGE_URI
           docker push $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
       - name: Terraform Init
         run: |
@@ -61,7 +58,7 @@ jobs:
           cd terraform
           terraform workspace select $TF_WORKSPACE || terraform workspace new $TF_WORKSPACE
 
-      - name: Terraform Apply
+      - name: Terraform Apply (Prod)
         run: |
           cd terraform
-          terraform apply -auto-approve
+          terraform apply -auto-approve -var "image_uri=${{ env.IMAGE_URI }}" -var "environment=prod"

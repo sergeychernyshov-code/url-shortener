@@ -16,8 +16,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bootstrap main.go
 # Stage 2: Runtime using provided.al2023
 FROM public.ecr.aws/lambda/provided:al2023
 
-# Copy the compiled binary to Lambda's expected bootstrap location
-COPY --from=builder /app/bootstrap /var/task/bootstrap
+# Copy the bootstrap binary to /var/runtime/bootstrap as expected by Lambda
+COPY --from=builder /app/bootstrap /var/runtime/bootstrap
 
 # Set handler name for Lambda container image expectations
 CMD ["bootstrap"]

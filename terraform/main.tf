@@ -1,4 +1,5 @@
-# Locals for environment suffixes and names
+data "aws_caller_identity" "current" {}
+
 locals {
   env_suffix       = var.environment == "prod" ? "" : "-${var.environment}"
   lambda_name      = "${var.lambda_function_name}${local.env_suffix}"
@@ -7,12 +8,28 @@ locals {
   lambda_role_name = "url-shortener-lambda-exec-role${local.env_suffix}"
 }
 
+# DynamoDB table
+resource "aws_dynamodb_table" "url_shortener_table" {
+  name           = var.dynamo_table_name
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "code"
+
+  attribute {
+    name = "code"
+    type = "S"
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.lambda_function_name
+  }
+}
+
 # ECR repository for Lambda container images
 resource "aws_ecr_repository" "url_shortener" {
   name = "url-shortener-lambda${local.env_suffix}"
 }
 
-# ECR repository policy to allow Lambda to pull images
 resource "aws_ecr_repository_policy" "lambda_repo_policy" {
   repository = aws_ecr_repository.url_shortener.name
 
@@ -33,7 +50,6 @@ resource "aws_ecr_repository_policy" "lambda_repo_policy" {
   })
 }
 
-# IAM role for Lambda execution
 resource "aws_iam_role" "lambda_exec" {
   name = local.lambda_role_name
 
@@ -49,7 +65,6 @@ resource "aws_iam_role" "lambda_exec" {
   })
 }
 
-# Attach policies to Lambda execution role
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -60,25 +75,53 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# Lambda function (container image)
-resource "aws_lambda_function" "url_shortener" {
-  function_name = local.lambda_name
+resource "aws_iam_policy" "dynamo_access" {
+  name = "url-shortener-lambda-dynamo-access${local.env_suffix}"
 
-  package_type = "Image"
-  image_uri    = var.image_uri
-
-  role        = aws_iam_role.lambda_exec.arn
-  timeout     = 10
-  memory_size = 256
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ],
+        Resource = aws_dynamodb_table.url_shortener_table.arn
+      }
+    ]
+  })
 }
 
-# HTTP API Gateway v2
+resource "aws_iam_role_policy_attachment" "dynamo_access_attach" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = aws_iam_policy.dynamo_access.arn
+}
+
+resource "aws_lambda_function" "url_shortener" {
+  function_name = local.lambda_name
+  package_type  = "Image"
+  image_uri     = var.image_uri
+  role          = aws_iam_role.lambda_exec.arn
+  timeout       = 10
+  memory_size   = 256
+
+  environment {
+    variables = {
+      DYNAMO_TABLE = aws_dynamodb_table.url_shortener_table.name
+    }
+  }
+}
+
 resource "aws_apigatewayv2_api" "http_api" {
   name          = local.api_name
   protocol_type = "HTTP"
 }
 
-# Lambda integration for API Gateway
 resource "aws_apigatewayv2_integration" "lambda_integration" {
   api_id                 = aws_apigatewayv2_api.http_api.id
   integration_type       = "AWS_PROXY"
@@ -86,21 +129,18 @@ resource "aws_apigatewayv2_integration" "lambda_integration" {
   payload_format_version = "2.0"
 }
 
-# Route for all requests to Lambda
 resource "aws_apigatewayv2_route" "default_route" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "ANY /{proxy+}"
   target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
 
-# Default stage, auto-deploy enabled
 resource "aws_apigatewayv2_stage" "default_stage" {
   api_id      = aws_apigatewayv2_api.http_api.id
   name        = "$default"
   auto_deploy = true
 }
 
-# Permission for API Gateway to invoke Lambda
 resource "aws_lambda_permission" "apigw_invoke" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
@@ -109,19 +149,16 @@ resource "aws_lambda_permission" "apigw_invoke" {
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
 
-# SNS topic for alerts
 resource "aws_sns_topic" "alerts" {
   name = local.sns_topic_name
 }
 
-# Email subscription to SNS topic
 resource "aws_sns_topic_subscription" "email_sub" {
   topic_arn = aws_sns_topic.alerts.arn
   protocol  = "email"
   endpoint  = var.sns_email
 }
 
-# CloudWatch alarm for Lambda errors
 resource "aws_cloudwatch_metric_alarm" "lambda_error_alarm" {
   alarm_name          = "url-shortener-lambda-errors${local.env_suffix}"
   alarm_description   = "Alarm when the Lambda function experiences errors"
@@ -138,7 +175,6 @@ resource "aws_cloudwatch_metric_alarm" "lambda_error_alarm" {
   }
 }
 
-# CloudWatch alarm for Lambda throttles
 resource "aws_cloudwatch_metric_alarm" "lambda_throttle_alarm" {
   alarm_name          = "url-shortener-lambda-throttles${local.env_suffix}"
   alarm_description   = "Alarm when the Lambda function is throttled"

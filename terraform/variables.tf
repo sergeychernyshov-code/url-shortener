@@ -16,6 +16,12 @@ variable "lambda_function_name" {
   default     = "url-shortener"
 }
 
+variable "dynamo_table_name" {
+  description = "DynamoDB table name"
+  type        = string
+  default     = "url-shortener-table-dev"
+}
+
 variable "sns_email" {
   description = "Email address for SNS alarm notifications"
   type        = string

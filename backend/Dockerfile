@@ -1,25 +1,23 @@
-# Stage 1: Builder - use official Golang 1.24 image
-FROM golang:1.24 AS builder
+# Builder stage: AWS Lambda Go builder (Amazon Linux 2 + Go)
+FROM public.ecr.aws/lambda/go-builder:1 as builder
 
 WORKDIR /app
 
-# Copy go.mod and go.sum first to download dependencies
+# Copy Go modules and download dependencies
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
 
 # Copy source code
 COPY main.go ./
 
-# Build static Linux binary (CGO disabled)
+# Build static Linux binary for Lambda
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main main.go
 
-# Stage 2: Runtime - AWS Lambda Go runtime
+# Runtime stage: AWS Lambda Go runtime
 FROM public.ecr.aws/lambda/go:1
 
-# Copy binary from builder
+# Copy the built binary from builder stage
 COPY --from=builder /app/main ${LAMBDA_TASK_ROOT}/main
 
-# Set CMD to your executable
+# Set entrypoint to the Lambda handler
 CMD ["main"]

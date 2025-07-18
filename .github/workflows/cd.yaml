@@ -81,4 +81,4 @@ jobs:
       - name: Terraform Apply (Prod)
         run: |
           cd terraform
-          terraform apply -auto-approve -var "image_uri=${{ env.IMAGE_URI }}" -var "environment=prod"
+          terraform apply -auto-approve -var "image_uri=${{ env.IMAGE_URI }}" -var "environment=prod"  -var "api_auth_token=${{ secrets.API_AUTH_TOKEN }}"

@@ -13,27 +13,31 @@ jobs:
       TF_WORKSPACE: url-shortener-dev
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-        aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Terraform Init
-      run: |
-        cd terraform
-        terraform init
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
 
-    - name: Terraform Select Workspace
-      run: |
-        cd terraform
-        terraform workspace select $TF_WORKSPACE || terraform workspace new $TF_WORKSPACE
+      - name: Terraform Select Workspace
+        working-directory: terraform
+        id: select_workspace
+        run: |
+          if terraform workspace list | grep -q "^${TF_WORKSPACE}$"; then
+            terraform workspace select "${TF_WORKSPACE}"
+          else
+            echo "Workspace ${TF_WORKSPACE} does not exist, skipping destroy."
+            echo "skip_destroy=true" >> $GITHUB_OUTPUT
+          fi
 
-    - name: Terraform Destroy (Dev)
-      run: |
-        cd terraform
-        terraform destroy -auto-approve -var "image_uri=dummy"
-
+      - name: Terraform Destroy (Dev)
+        if: steps.select_workspace.outputs.skip_destroy != 'true'
+        working-directory: terraform
+        run: terraform destroy -auto-approve -var "image_uri=dummy"

@@ -1,24 +1,3 @@
-variable "image_uri" {
-  description = "The ECR image URI for the Lambda function"
-  type        = string
-}
-
-variable "environment" {
-  description = "Deployment environment (dev, prod)"
-  type        = string
-  default     = "prod"
-}
-
-variable "lambda_function_name" {
-  description = "Base Lambda function name"
-  type        = string
-  default     = "url-shortener"
-}
-
-variable "sns_email" {
-  description = "Email for SNS alarm notifications"
-  type        = string
-}
 
 # Append environment suffix except if prod (to keep names clean)
 locals {

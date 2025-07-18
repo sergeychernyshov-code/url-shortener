@@ -4,12 +4,6 @@ variable "image_uri" {
   sensitive   = true
 }
 
-variable "aws_region" {
-  description = "AWS region to deploy resources in"
-  type        = string
-  default     = "eu-central-1"
-}
-
 variable "environment" {
   description = "Deployment environment (e.g. dev, prod)"
   type        = string
@@ -27,4 +21,3 @@ variable "sns_email" {
   type        = string
   default     = "sergiy.chernyshow@gmail.com"  # Replace or override in tfvars or via CLI
 }
-

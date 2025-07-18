@@ -13,7 +13,7 @@ RUN go mod download
 COPY . .
 
 # Build a static Linux binary
-RUN GOOS=linux GOARCH=amd64 go build -o main main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main main.go
 
 # Stage 2: Runtime (AWS Lambda AL2023 provided runtime)
 FROM public.ecr.aws/lambda/provided:al2023

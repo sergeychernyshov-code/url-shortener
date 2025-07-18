@@ -46,6 +46,17 @@ func randomCode(n int) string {
 }
 
 func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+
+	authHeader := req.Headers["Authorization"]
+	expectedToken := os.Getenv("API_AUTH_TOKEN")
+
+	if authHeader != "Bearer "+expectedToken {
+		return events.APIGatewayProxyResponse{
+			StatusCode: 401,
+			Body:       "Unauthorized",
+		}, nil
+	}
+
 	path := req.RawPath
 	method := req.RequestContext.HTTP.Method
 

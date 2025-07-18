@@ -113,6 +113,7 @@ resource "aws_lambda_function" "url_shortener" {
   environment {
     variables = {
       DYNAMO_TABLE = aws_dynamodb_table.url_shortener_table.name
+      API_AUTH_TOKEN  = var.api_auth_token
     }
   }
 }

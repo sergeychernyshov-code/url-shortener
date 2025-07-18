@@ -22,6 +22,12 @@ variable "dynamo_table_name" {
   default     = "url-shortener-table-dev"
 }
 
+variable "api_auth_token" {
+  description = "Secret token to authorize API requests"
+  type        = string
+  sensitive   = true
+}
+
 variable "sns_email" {
   description = "Email address for SNS alarm notifications"
   type        = string

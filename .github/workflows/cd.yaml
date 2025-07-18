@@ -1,0 +1,84 @@
+name: Prod Deploy - URL Shortener
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  prod-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: eu-central-1
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Init Go module (if missing)
+        run: |
+          cd backend
+          if [ ! -f go.mod ]; then
+            go mod init github.com/sergeychernyshov-code/url-shortener/backend
+          fi
+          go mod tidy
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.24
+
+      - name: Build Go executable
+        run: |
+          cd backend
+          GOOS=linux GOARCH=amd64 go build -o main
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build Docker image
+        run: |
+          docker build -t url-shortener-lambda backend/
+
+      - name: Tag Docker image with commit SHA and Push
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/url-shortener-lambda:${IMAGE_TAG}"
+          docker tag url-shortener-lambda $IMAGE_URI
+          docker push $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      - name: Terraform Select or Create Workspace
+        run: |
+          cd terraform
+          WORKSPACE="url-shortener"
+          terraform workspace list | grep -q "$WORKSPACE" \
+            && terraform workspace select "$WORKSPACE" \
+            || terraform workspace new "$WORKSPACE"
+
+      - name: Terraform Apply (Prod)
+        run: |
+          cd terraform
+          terraform apply -auto-approve -var "image_uri=${{ env.IMAGE_URI }}" -var "environment=prod"  -var "api_auth_token=${{ secrets.API_AUTH_TOKEN }}"

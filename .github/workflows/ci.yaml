@@ -50,7 +50,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t url-shortener-lambda backend/
+          docker build -t url-shortener-lambda -f backend/Dockerfile backend/
 
       - name: Tag and Push Docker image
         run: |

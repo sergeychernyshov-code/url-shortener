@@ -72,10 +72,12 @@ jobs:
           cd terraform
           terraform init
 
-      - name: Terraform Select Workspace
+      - name: Terraform Select or Create Workspace
         run: |
           cd terraform
-          terraform workspace select $TF_WORKSPACE || terraform workspace new $TF_WORKSPACE
+          terraform workspace list | grep -q "$TF_WORKSPACE" \
+            && terraform workspace select "$TF_WORKSPACE" \
+            || terraform workspace new "$TF_WORKSPACE"
 
       - name: Terraform Apply (Dev)
         run: |

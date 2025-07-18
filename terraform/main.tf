@@ -1,20 +1,40 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
+variable "image_uri" {
+  description = "The ECR image URI for the Lambda function"
+  type        = string
 }
 
-# ECR repository to store the Lambda docker image
+variable "environment" {
+  description = "Deployment environment (dev, prod)"
+  type        = string
+  default     = "prod"
+}
+
+variable "lambda_function_name" {
+  description = "Base Lambda function name"
+  type        = string
+  default     = "url-shortener"
+}
+
+variable "sns_email" {
+  description = "Email for SNS alarm notifications"
+  type        = string
+}
+
+# Append environment suffix except if prod (to keep names clean)
+locals {
+  env_suffix = var.environment == "prod" ? "" : "-${var.environment}"
+  lambda_name = "${var.lambda_function_name}${local.env_suffix}"
+  sns_topic_name = "url-shortener-alerts${local.env_suffix}"
+  api_name = "url-shortener-api${local.env_suffix}"
+  lambda_role_name = "url-shortener-lambda-exec-role${local.env_suffix}"
+}
+
 resource "aws_ecr_repository" "url_shortener" {
-  name = "url-shortener-lambda"
+  name = "url-shortener-lambda${local.env_suffix}"
 }
 
-# IAM Role for Lambda execution
 resource "aws_iam_role" "lambda_exec" {
-  name = "url-shortener-lambda-exec-role"
+  name = local.lambda_role_name
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -28,7 +48,6 @@ resource "aws_iam_role" "lambda_exec" {
   })
 }
 
-# Attach policies for Lambda execution and ECR image pull
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -39,23 +58,19 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# Lambda function using container image
 resource "aws_lambda_function" "url_shortener" {
-  function_name = "url-shortener"
+  function_name = local.lambda_name
 
   package_type = "Image"
-  image_uri    = "${aws_ecr_repository.url_shortener.repository_url}:latest"
+  image_uri    = var.image_uri
 
-  role = aws_iam_role.lambda_exec.arn
-
-  # Timeout and memory settings as needed
-  timeout      = 10
-  memory_size  = 256
+  role        = aws_iam_role.lambda_exec.arn
+  timeout     = 10
+  memory_size = 256
 }
 
-# API Gateway HTTP API to expose the Lambda
 resource "aws_apigatewayv2_api" "http_api" {
-  name          = "url-shortener-api"
+  name          = local.api_name
   protocol_type = "HTTP"
 }
 
@@ -78,7 +93,6 @@ resource "aws_apigatewayv2_stage" "default_stage" {
   auto_deploy = true
 }
 
-# Permission for API Gateway to invoke Lambda
 resource "aws_lambda_permission" "apigw_invoke" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
@@ -87,21 +101,18 @@ resource "aws_lambda_permission" "apigw_invoke" {
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
 
-# SNS Topic for alert notifications
 resource "aws_sns_topic" "alerts" {
-  name = "url-shortener-alerts"
+  name = local.sns_topic_name
 }
 
-# SNS subscription - replace with your email or endpoint
 resource "aws_sns_topic_subscription" "email_sub" {
   topic_arn = aws_sns_topic.alerts.arn
   protocol  = "email"
-  endpoint  = "sergiy.chernyshow@gmail.com"  # Change this!
+  endpoint  = var.sns_email
 }
 
-# CloudWatch Alarm for Lambda Errors
 resource "aws_cloudwatch_metric_alarm" "lambda_error_alarm" {
-  alarm_name          = "url-shortener-lambda-errors"
+  alarm_name          = "url-shortener-lambda-errors${local.env_suffix}"
   alarm_description   = "Alarm when the Lambda function experiences errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -116,9 +127,8 @@ resource "aws_cloudwatch_metric_alarm" "lambda_error_alarm" {
   }
 }
 
-# CloudWatch Alarm for Lambda Throttles
 resource "aws_cloudwatch_metric_alarm" "lambda_throttle_alarm" {
-  alarm_name          = "url-shortener-lambda-throttles"
+  alarm_name          = "url-shortener-lambda-throttles${local.env_suffix}"
   alarm_description   = "Alarm when the Lambda function is throttled"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1

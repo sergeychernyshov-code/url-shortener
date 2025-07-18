@@ -56,7 +56,8 @@ jobs:
       - name: Tag and Push Docker image
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
-          IMAGE_TAG=pr-${PR_NUMBER}
+          COMMIT_HASH=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE_TAG=pr-${PR_NUMBER}-${COMMIT_HASH}
           IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/url-shortener-lambda:${IMAGE_TAG}"
           docker tag url-shortener-lambda $IMAGE_URI
           docker push $IMAGE_URI

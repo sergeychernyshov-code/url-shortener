@@ -7,17 +7,16 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
-COPY main.go ./
+# Copy the source code
+COPY . .
 
-# Build statically linked Go binary named 'bootstrap' for AWS Lambda
+# Build statically linked binary for Linux
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bootstrap main.go
 
-# Stage 2: Runtime - AWS Lambda Custom Runtime (provided.al2023)
+# Stage 2: Runtime using provided.al2023
 FROM public.ecr.aws/lambda/provided:al2023
 
-# Copy the 'bootstrap' binary to Lambda's task root
-COPY --from=builder /app/bootstrap ${LAMBDA_TASK_ROOT}/bootstrap
+# Copy the compiled binary to Lambda's expected bootstrap location
+COPY --from=builder /app/bootstrap /var/task/bootstrap
 
-# Ensure 'bootstrap' is executable (usually not needed, but good practice)
-RUN chmod +x ${LAMBDA_TASK_ROOT}/bootstrap
+# No need to specify CMD or ENTRYPOINT because AWS Lambda will execute /var/task/bootstrap automatically

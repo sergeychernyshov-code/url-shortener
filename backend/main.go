@@ -18,15 +18,20 @@ import (
 )
 
 var (
-	dynamo    *dynamodb.DynamoDB
-	tableName = os.Getenv("DYNAMO_TABLE")
-	letters   = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	dynamoClient dynamoAPI
+	tableName    = os.Getenv("DYNAMO_TABLE")
+	letters      = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 )
+
+type dynamoAPI interface {
+	PutItem(*dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error)
+	GetItem(*dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error)
+}
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 	sess := session.Must(session.NewSession())
-	dynamo = dynamodb.New(sess)
+	dynamoClient = dynamodb.New(sess)
 }
 
 type ShortenRequest struct {
@@ -83,7 +88,7 @@ func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.AP
 
 		code := randomCode(6)
 
-		_, err := dynamo.PutItem(&dynamodb.PutItemInput{
+		_, err := dynamoClient.PutItem(&dynamodb.PutItemInput{
 			TableName: aws.String(tableName),
 			Item: map[string]*dynamodb.AttributeValue{
 				"code":     {S: aws.String(code)},
@@ -112,7 +117,7 @@ func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.AP
 		}
 		code := parts[0]
 
-		res, err := dynamo.GetItem(&dynamodb.GetItemInput{
+		res, err := dynamoClient.GetItem(&dynamodb.GetItemInput{
 			TableName: aws.String(tableName),
 			Key: map[string]*dynamodb.AttributeValue{
 				"code": {S: aws.String(code)},
